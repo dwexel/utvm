@@ -25,13 +25,15 @@
 	use spritebatch to make it all
 		glitter
 
+	have some kind of, recursive function to create a table of positions based on what each vertex is connected to
+
 ]]
 
 
 local world
 local lg = love.graphics
 local width, height = love.graphics.getDimensions()
-local g3d = require("lib/g3d")
+g3d = require("lib/g3d")
 tiny = require("lib.tiny")
 
 -- using this one for now instead of g3d
@@ -67,7 +69,7 @@ local square_verts = {
 	{-1, -1, 0, 0,1},
 }
 
-local billboard = {
+billboard = {
 	vertexFormat = 	{
 		{"VertexPosition", "float", 3},
 		{"VertexTexCoord", "float", 2}
@@ -105,38 +107,18 @@ for i = 1, #square_verts do
 	square_verts[i][3] = square_verts[i][3] * 0.1
 end
 
-billboard.new = function(tex, pos)
+function newBillboard(tex, pos)
 	if type(tex) == "string" then error("wrong type") end
 
 	local self = setmetatable({}, g3d.modelMT)
+	self.isBillboard = true
 	self.mesh = love.graphics.newMesh(billboard.vertexFormat, square_verts, "triangles", "static")
 	self.mesh:setTexture(tex)
 	self.matrix = g3d.newMatrix()
-	self.isBillboard = true
    self:setTransform(pos or {0,0,0}, {0,0,0}, {1, 1, 1})
 
 	return self
 end
-
-
--- local pickTest = {active = false, canvas = lg.newCanvas()}
-local pickTest = {}
-pickTest.shader = love.graphics.newShader[[
-	#ifdef VERTEX
-		uniform mat4 model;
-		uniform mat4 projection;
-		uniform mat4 view;
-			vec4 position(mat4 transform_projection, vec4 vertex_position)
-			{
-				vec4 v = projection * view * model * vertex_position;
-				v.y *= -1.0;
-				return v;
-			}
-	#endif
-	#ifdef PIXEL
-		vec4 effect(vec4 color, Image tex, vec2 tc, vec2 sc) { return color; }
-	#endif
-]]
 
 local gamestates = {PLAY = 1, PAUSED = 2}
 local gamestate = 1
@@ -170,6 +152,28 @@ local function dotProduct(a1,a2, b1,b2)
     return a1*b1 + a2*b2
 end
 
+
+local function newSB(tex, pos)
+	local sb = lg.newSpriteBatch(tex, 100, "static")
+	local matrix_scale = 0.001
+	local pic_scale = 1
+	local w, h = tex:getWidth(), tex:getHeight()
+
+	for i = 0, 10, 2 do
+		for j = 0, 10, 2 do
+			sb:add(i*w, j*h)
+		end
+	end
+
+	local defaultRotation = {math.pi/2, 0, math.pi/2}
+	local self = setmetatable({}, g3d.modelMT)
+	self.matrix = g3d.newMatrix()
+	self.matrix:setTransformationMatrix(pos, defaultRotation, {-matrix_scale, -matrix_scale, matrix_scale})
+	self.mesh = sb
+	self.isSpriteBatch = true
+	return self
+end
+
 local player = {
 	pos = 1
 }
@@ -180,9 +184,10 @@ local drawMenu
 -- systems
 -----------------------------------------
 
+
 graphicsState = tiny.system({
 	shader = g3d.shader,
-	-- shader = defaultShader, 
+	-- shader = defaultShader,
 	camera = g3d.camera,
 })
 
@@ -218,24 +223,7 @@ function renderTarget:postWrap(dt)
 	end
 end
 
-drawModels = tiny.processingSystem()
-drawModels.drawSystem = true
-drawModels.filter = tiny.requireAny("mesh")
 
-function drawModels:preProcess()
-	lg.circle("fill", 100, 100, 10)
-	graphicsState.shader:send("viewMatrix", graphicsState.camera.viewMatrix)
-	billboard.shader:send("viewMatrix", graphicsState.camera.viewMatrix)
-end
-
-function drawModels:process(e)
-	if e.isBillboard then
-		e:draw(billboard.shader)
-	else
-		e:draw(graphicsState.shader)
-	end
-end
--- combine these?
 updateCamera = tiny.system(graphicsState.camera)
 updateCamera.updateSystem = true
 updateCamera.processPlaying = true
@@ -270,8 +258,6 @@ updatePlayerPos.inputQueue = 0
 
 function updatePlayerPos:update(dt)
 	if self.inputQueue ~= 0 then
-		-- get index of next position
-		-- local nextp = level.wrap(self.pos + self.inputQueue)
 		player.pos = level.wrap(self.pos + self.inputQueue)
 		local cam = graphicsState.camera
 
@@ -279,9 +265,7 @@ function updatePlayerPos:update(dt)
 		local vx = cam.target[1]-cam.position[1]
 		local vy = cam.target[2]-cam.position[2]
 
-		-- vector to next position
 		-- local nextPosition = level.positions[1]
-
 		local dx = -cam.position[1]
 		local dy = -cam.position[2]
 
@@ -312,37 +296,35 @@ end
 -- driver
 -----------------------------------------
 
-
 function love.load()
-	local globe = g3d.newModel("assets/sphere.obj", "assets/earth.png", {0, 0, 0}, nil, 0.5)
+	local globe = g3d.newModel("assets/sphere.obj", "assets/earth.png", {0, 0, 0}, nil, 0.5):compress()
 	globe.spinning = true
-	local car = g3d.newModel("assets/car.obj", "assets/1377 car.png", {2, -1, 0}, {0, 0.5, 0}, 0.05)
-	car:compress()
-	local level_background = g3d.newModel("assets/boo.obj", "assets/alexander ross.png")
-	level_background:compress()
-
+	local car = g3d.newModel("assets/car.obj", "assets/1377 car.png", {2, -1, 0}, {0, 0.5, 0}, 0.05):compress()
+	local level_background = g3d.newModel("assets/boo.obj", "assets/alexander ross.png"):compress()
 	-- exported at 0.1 
-	fish = g3d.newModel("assets/Goldfish.obj", "assets/1377 car.png", {-0.5, -4, 0.2}, nil, 0.5)
-	fish:compress()
+	fish = g3d.newModel("assets/Goldfish.obj", "assets/1377 car.png", {-0.5, -4, 0.2}, nil, 0.5):compress()
 	fish.color = {1, 0.5, 0.6}
 
+	local burger = newSB(lg.newImage("assets/burger.png"), {0.5, 0, 2})
+
 	drawMenu = require("systems.drawMenu")
+
+	local drawModels = require("systems.drawModels")
 
 	local ui = {
 		menu = {"resume", "exit"},
 		font = lg.newFont(20),
-
-		text = "hello", 
 		x = 500, 
 		y = 500
 	}
 
 	world = tiny.world(
-		globe,
+		-- globe,
 		car,
-		bb,
 		level_background,
 		fish,
+		burger,
+
 		ui,
 
 		updateCamera,
@@ -360,13 +342,12 @@ function love.load()
 	level.positions = loadPositions("assets/positions.obj")
 	local bi = lg.newImage("assets/1377 car.png")
 	for _, v in ipairs(level.positions) do
-		world:addEntity(billboard.new(bi, v))
+		world:addEntity(newBillboard(bi, v))
 	end
 
-
-
-
 	-- local index = world:setSystemIndex(input, 1)
+
+
 end
 
 
@@ -426,4 +407,5 @@ function love.resize(w, h)
 	width, height = w, h
    graphicsState.camera.aspectRatio = love.graphics.getWidth()/love.graphics.getHeight()
    graphicsState.camera.updateProjectionMatrix()
+   -- send to shader
 end

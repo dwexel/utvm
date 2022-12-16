@@ -234,6 +234,8 @@ if success then
         self.mesh:setVertices(data)
         self.mesh:setTexture(self.texture)
         self.verts = nil
+
+        return self
     end
 end
 
