@@ -9,24 +9,36 @@
 			z > up
 
 
+	globals
+		player info
+		level info
+		graphics state info
+
+
 	probs
 		billboards not scaling! why!	
-		if you wanted to use spritebatches, maybe give them a defferent vertex format
-
 	
+
 	mod 
 		non-clearing canvas
 		non depth testing
+		scramble verts in memory
+		wireframe mode
 
-	
-	use a load level system
-	use love filesystem to get a bunch of modules
+	todo
+		use a load level system
 
 	use spritebatch to make it all
 		glitter
 
-	have some kind of, recursive function to create a table of positions based on what each vertex is connected to
+	have some kind of, recursive function to create a table of positions based on what each vertex is connected to	
+		could use a shader to make atlas animations
 
+
+	globals are good when used sparingly
+
+	i am going in the right direction with the input system.
+	it would be cool if I could systematize it more
 ]]
 
 
@@ -36,28 +48,22 @@ local width, height = love.graphics.getDimensions()
 g3d = require("lib/g3d")
 tiny = require("lib.tiny")
 
--- using this one for now instead of g3d
--- local defaultShader = love.graphics.newShader[[
--- 	#ifdef VERTEX
--- 		uniform mat4 model;
--- 		uniform mat4 projection;
--- 		uniform mat4 view;
--- 		vec4 position(mat4 transform_projection, vec4 vertex_position)
--- 		{
--- 			return projection * view * model * vertex_position;
--- 		}
--- 	#endif
--- ]]
-
 local function loadPositions(path)
 	local result = {}
-    for line in love.filesystem.lines(path) do
-    	local x, y, z = line:match("^v ([^%s]+) ([^%s]+) ([^%s]+)")
-    	if x then
-    		table.insert(result, {x, y, z})
-    	end
-    end
-    return result
+	-- how does this work exactly.
+	local connections = {}
+	for line in love.filesystem.lines(path) do
+		local words = {}
+		for word in line:gmatch "([^%s]+)" do
+			table.insert(words, word)
+		end
+		if words[1] == "v" then
+			table.insert(result, {tonumber(words[2]), tonumber(words[3]), tonumber(words[4])})
+		elseif words[1] == "l" then
+			print(line)
+		end
+	end
+	return result
 end
 
 local square_verts = {
@@ -69,8 +75,8 @@ local square_verts = {
 	{-1, -1, 0, 0,1},
 }
 
-billboard = {
-	vertexFormat = 	{
+local billboard = {
+	vertexFormat = {
 		{"VertexPosition", "float", 3},
 		{"VertexTexCoord", "float", 2}
 	}
@@ -85,17 +91,13 @@ billboard.shader = love.graphics.newShader[[
 		vec4 position(mat4 transform_projection, vec4 vertexPosition)
 		{
 			mat4 modelView = viewMatrix * modelMatrix;
-
 			modelView[0] = vec4(1, 0, 0, 0);
 			modelView[1] = vec4(0, 1, 0, 0);
 			modelView[2] = vec4(0, 0, 1, 0);
-
 			vec4 screenPosition = projectionMatrix * modelView * vertexPosition;
-
 			if (isCanvasEnabled) {
 				screenPosition.y *= -1.0;
 			}
-
 			return screenPosition;
 		}
 	#endif	
@@ -108,14 +110,14 @@ for i = 1, #square_verts do
 end
 
 function newBillboard(tex, pos)
-	if type(tex) == "string" then error("wrong type") end
+	assert(type(tex) == "userdata", "wrong type")
 
 	local self = setmetatable({}, g3d.modelMT)
 	self.isBillboard = true
 	self.mesh = love.graphics.newMesh(billboard.vertexFormat, square_verts, "triangles", "static")
 	self.mesh:setTexture(tex)
 	self.matrix = g3d.newMatrix()
-   self:setTransform(pos or {0,0,0}, {0,0,0}, {1, 1, 1})
+   self:setTransform(pos or {0,0,0}, {0,0,0}, {1,1,1})
 
 	return self
 end
@@ -134,24 +136,9 @@ function gamestates:switch()
 	end
 end
 
-
-local level = {
-	positions = nil
-}
-
-function level.wrap(i)
-	if i > #level.positions then
-		i = 1
-	elseif i < 1 then
-		i = #level.positions
-	end
-	return i
-end
-
 local function dotProduct(a1,a2, b1,b2)
     return a1*b1 + a2*b2
 end
-
 
 local function newSB(tex, pos)
 	local sb = lg.newSpriteBatch(tex, 100, "static")
@@ -167,149 +154,97 @@ local function newSB(tex, pos)
 
 	local defaultRotation = {math.pi/2, 0, math.pi/2}
 	local self = setmetatable({}, g3d.modelMT)
+	self.isSpriteBatch = true
 	self.matrix = g3d.newMatrix()
 	self.matrix:setTransformationMatrix(pos, defaultRotation, {-matrix_scale, -matrix_scale, matrix_scale})
 	self.mesh = sb
-	self.isSpriteBatch = true
 	return self
 end
 
-local player = {
+
+
+---------------------------------------
+-- globals
+---------------------------------------
+
+level = {
+	positions = nil
+}
+
+function level.wrap(i)
+	if i > #level.positions then
+		i = 1
+	elseif i < 1 then
+		i = #level.positions
+	end
+	return i
+end
+
+player = {
 	pos = 1
 }
 
-local drawMenu
+graphicsState = {
+	shader = g3d.shader,
+	camera = g3d.camera,
+	billboardShader = billboard.shader
+}
+
+do
+	local gs = graphicsState
+	gs.camera.r = 0
+	gs.shader:send("viewMatrix", gs.camera.viewMatrix)
+	gs.shader:send("projectionMatrix", gs.camera.projectionMatrix)
+	gs.billboardShader:send("viewMatrix", gs.camera.viewMatrix)
+	gs.billboardShader:send("projectionMatrix", gs.camera.projectionMatrix)
+end
+
+
+inputQueue = ""
+
 
 -----------------------------------------
 -- systems
 -----------------------------------------
 
 
-graphicsState = tiny.system({
-	shader = g3d.shader,
-	-- shader = defaultShader,
-	camera = g3d.camera,
-})
+local spin = tiny.processingSystem()
+spin.updateSystem = true
+spin.processPlaying = true
+spin.filter = tiny.requireAll("spinning")
 
-function graphicsState:onAddToWorld()
-	-- manage camera manually
-	self.camera = g3d.camera
-	self.camera.r = 0
-
-	self.shader:send("viewMatrix", self.camera.viewMatrix)
-	self.shader:send("projectionMatrix", self.camera.projectionMatrix)
-
-	billboard.shader:send("viewMatrix", self.camera.viewMatrix)
-	billboard.shader:send("projectionMatrix", self.camera.projectionMatrix)
-end
-
-renderTarget = tiny.system({canvas = lg.newCanvas()})
-renderTarget.drawSystem = true
-renderTarget.modes = {NORMAL, CANVAS}
-renderTarget.mode = 1
-
--- called on each system before update is called on any system
-function renderTarget:preWrap(dt)
-	if self.mode == 2 then
-		lg.setCanvas({self.canvas, depth = true})
-		lg.clear()
-	end
-end
-
-function renderTarget:postWrap(dt)
-	if self.mode == 2 then
-		lg.setCanvas()
-		lg.draw(self.canvas, 0,0,0, 0.5)
-	end
+local a = 0
+local twoPI = 2*math.pi
+function spin:process(e, dt)
+	a = (a + dt/2) % twoPI
+	e:setRotation(0, 0, a)
 end
 
 
-updateCamera = tiny.system(graphicsState.camera)
-updateCamera.updateSystem = true
-updateCamera.processPlaying = true
-
-function updateCamera:update(dt)
-	local kd = love.keyboard.isDown
-	local ix, iy = 0, 0
-	local speed = 2
-
-	if kd("a") then ix = -dt elseif kd("d") then ix = dt end
-	self.r = (self.r - ix*speed) % (math.pi*2)
-	self.lookInDirection(nil,nil,nil, self.r)
-	-- self.lookAtFrom(nil,nil,nil, 0,0,0)
-
-	-- snap to positions
-	-- self.position[1] = level.positions[player.pos][1]
-	-- self.position[2] = level.positions[player.pos][2]
-	-- self.position[3] = level.positions[player.pos][3]
-
-	-- move based on look direction
-	if kd("w") then iy = -dt elseif kd("s") then iy = dt end
-	local lx = math.cos(self.r) * -iy
-	local ly = math.sin(self.r) * -iy
-	self.position[1] = self.position[1] + lx	
-	self.position[2] = self.position[2] + ly
-end
-
-updatePlayerPos = tiny.system(player)
-updatePlayerPos.updateSystem = true
-updatePlayerPos.processPlaying = true
-updatePlayerPos.inputQueue = 0
-
-function updatePlayerPos:update(dt)
-	if self.inputQueue ~= 0 then
-		player.pos = level.wrap(self.pos + self.inputQueue)
-		local cam = graphicsState.camera
-
-		-- view vector
-		local vx = cam.target[1]-cam.position[1]
-		local vy = cam.target[2]-cam.position[2]
-
-		-- local nextPosition = level.positions[1]
-		local dx = -cam.position[1]
-		local dy = -cam.position[2]
-
-		local dot = dotProduct(vx,vy, dx,dy)
-		if dot < 0 then
-			print("away from origin")
-		else
-			print("towards origin")
-		end
-
-		self.inputQueue = 0
-	end
-end
-
--- routeInput = tiny.processingSystem({
--- 	inputQueue = ""
--- })
--- routeInput.updateSystem = true
--- routeInput.processPlaying = true
--- routeInput.processPaused = true
--- routeInput.filter = tiny.requireAny("menu")
-
--- function
 
 
+local updatePlayerPos = require("systems.updatePlayerPos")
+local renderTarget = require("systems.renderTarget")
+local drawMenu = require("systems.drawMenu")
 
 -----------------------------------------
 -- driver
 -----------------------------------------
 
+
 function love.load()
 	local globe = g3d.newModel("assets/sphere.obj", "assets/earth.png", {0, 0, 0}, nil, 0.5):compress()
 	globe.spinning = true
+
 	local car = g3d.newModel("assets/car.obj", "assets/1377 car.png", {2, -1, 0}, {0, 0.5, 0}, 0.05):compress()
 	local level_background = g3d.newModel("assets/boo.obj", "assets/alexander ross.png"):compress()
+	
 	-- exported at 0.1 
 	fish = g3d.newModel("assets/Goldfish.obj", "assets/1377 car.png", {-0.5, -4, 0.2}, nil, 0.5):compress()
 	fish.color = {1, 0.5, 0.6}
 
 	local burger = newSB(lg.newImage("assets/burger.png"), {0.5, 0, 2})
 
-	drawMenu = require("systems.drawMenu")
-
-	local drawModels = require("systems.drawModels")
 
 	local ui = {
 		menu = {"resume", "exit"},
@@ -319,49 +254,43 @@ function love.load()
 	}
 
 	world = tiny.world(
-		-- globe,
 		car,
+		globe,
 		level_background,
 		fish,
 		burger,
-
 		ui,
 
-		updateCamera,
-		updatePlayerPos,
-		
-		graphicsState,
-		renderTarget,
+		spin,
 
-		drawModels,
-		drawMenu
+		updatePlayerPos,
+		renderTarget,
+		drawMenu,
+
+		require("systems.updateCamera"),
+		require("systems.drawModels")
+
 	)
 
-	-- damn, how do I make sure they're in order?
-	-- set vertex attributes in blender?
 	level.positions = loadPositions("assets/positions.obj")
 	local bi = lg.newImage("assets/1377 car.png")
 	for _, v in ipairs(level.positions) do
 		world:addEntity(newBillboard(bi, v))
 	end
-
-	-- local index = world:setSystemIndex(input, 1)
-
-
 end
 
 
-local playFilter = tiny.requireAll("updateSystem", "processPlaying")
-local pauseFilter = tiny.requireAll("updatesytem", "processPaused")
+local playingFilter = tiny.requireAll("updateSystem", "processPlaying")
+local pausedFilter = tiny.requireAll("updatesytem", "processPaused")
 
 local drawPlayingFilter = tiny.requireAll("drawSystem", tiny.rejectAny("processPaused"))
 local drawPausedFilter = tiny.requireAll("drawSystem")
 
 function love.update(dt)
 	if gamestate == gamestates.PLAY then
-		world:update(dt, playFilter)
+		world:update(dt, playingFilter)
 	elseif gamestate == gamestates.PAUSED then
-		world:update(dt, pauseFilter)
+		world:update(dt, pausedFilter)
 	end
 end
 
@@ -380,32 +309,40 @@ function love.keypressed(key, scancode, isrepeat)
 		love.event.quit()
 	end
 
-	if key == "w" then
-		updatePlayerPos.inputQueue = 1
-	elseif key == "s" then
-		updatePlayerPos.inputQueue = -1
-	end
-
-	if key == "p" then
-		local p = graphicsState.camera.position
-		fish:lookAt(p, nil)
-		print(table.concat(p, ", "))
-	end
-
-	local n = tonumber(key)
-	if n then
-		renderTarget.mode = n
-	end
+	updatePlayerPos.input = key
+	renderTarget.input = key
+	drawMenu.input = key
 
 
-	-- only will update if paused
-	drawMenu.inputQueue = key
+	-- inputQueue = key
 
+	-- if key == "w" then
+	-- 	updatePlayerPos.inputQueue = 1
+	-- elseif key == "s" then
+	-- 	updatePlayerPos.inputQueue = -1
+	-- end
+
+	-- if key == "p" then
+	-- 	local p = graphicsState.camera.position
+	-- 	fish:lookAt(p, nil)
+	-- 	print(table.concat(p, ", "))
+	-- end
+
+	-- local n = tonumber(key)
+	-- if n then
+	-- 	renderTarget.mode = n
+	-- end
+
+	-- drawMenu.inputQueue = key
 end
 
 function love.resize(w, h)
 	width, height = w, h
-   graphicsState.camera.aspectRatio = love.graphics.getWidth()/love.graphics.getHeight()
-   graphicsState.camera.updateProjectionMatrix()
-   -- send to shader
+
+	local gs = graphicsState
+   gs.camera.aspectRatio = love.graphics.getWidth()/love.graphics.getHeight()
+   gs.camera.updateProjectionMatrix()
+	gs.shader:send("projectionMatrix", gs.camera.projectionMatrix)
+	gs.billboardShader:send("projectionMatrix", gs.camera.projectionMatrix)
+
 end
