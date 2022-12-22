@@ -1,32 +1,30 @@
+assert(graphicsState)
+
 local lg = love.graphics
-
-local renderTarget = tiny.system({
-	input = "",
-	canvas = lg.newCanvas()
-})
-
+local gs = graphicsState
+local renderTarget = tiny.system()
 renderTarget.drawSystem = true
-renderTarget.modes = {NORMAL, CANVAS}
-renderTarget.mode = 1
+renderTarget.active = true
+
+
 
 -- called on each system before update is called on any system
 function renderTarget:preWrap(dt)
-	local n = tonumber(self.input)
-	if n then 
-		self.mode = n
-	end
+	if gs.canvas and gs.updateCanvasFlag then
 
-
-	if self.mode == 2 then
-		lg.setCanvas({self.canvas, depth = true})
+		lg.setCanvas({gs.canvas, depth = true})
 		lg.clear()
 	end
 end
 
 function renderTarget:postWrap(dt)
-	if self.mode == 2 then
+	if gs.updateCanvasFlag then
+		gs.updateCanvasFlag = false
+	end
+
+	if gs.canvas then
 		lg.setCanvas()
-		lg.draw(self.canvas, 0,0,0, 0.5)
+		lg.draw(gs.canvas, 0,0,0, 0.5)
 	end
 end
 

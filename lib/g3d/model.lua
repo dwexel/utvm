@@ -164,27 +164,27 @@ function model:lookAt(target, up)
     self.matrix:lookAtFrom(self.translation, target, up or {0,0,1})
 end
 
-
-
-
-
-
 function model:draw(shader)    
     -- local shader = shader or self.shader
     
     love.graphics.setShader(shader)
     shader:send("modelMatrix", self.matrix)
+
+    -- only used in the default shader
+    if shader:hasUniform "isCanvasEnabled" then shader:send("isCanvasEnabled", love.graphics.getCanvas() ~= nil) end
     
-    -- shader:send("modelMatrix", self.matrix)
     -- shader:send("viewMatrix", camera.viewMatrix)
     -- shader:send("projectionMatrix", camera.projectionMatrix)
     
-    if shader:hasUniform "isCanvasEnabled" then shader:send("isCanvasEnabled", love.graphics.getCanvas() ~= nil) end
-    if self.color then love.graphics.setColor(self.color) end
     
+    if self.color then love.graphics.setColor(self.color) end
     love.graphics.draw(self.mesh)
     love.graphics.setColor(1, 1, 1)
     love.graphics.setShader()
+end
+
+function model:drawID(shader)
+    --self.shader?
 end
 
 -- the fallback function if ffi was not loaded
