@@ -63,6 +63,7 @@ local function newModel(verts, texture, translation, rotation, scale)
 
     self.color = nil
 
+
     return self
 end
 
@@ -166,25 +167,20 @@ end
 
 function model:draw(shader)    
     -- local shader = shader or self.shader
-    
     love.graphics.setShader(shader)
     shader:send("modelMatrix", self.matrix)
-
-    -- only used in the default shader
     if shader:hasUniform "isCanvasEnabled" then shader:send("isCanvasEnabled", love.graphics.getCanvas() ~= nil) end
     
     -- shader:send("viewMatrix", camera.viewMatrix)
     -- shader:send("projectionMatrix", camera.projectionMatrix)
-    
-    
-    if self.color then love.graphics.setColor(self.color) end
+
     love.graphics.draw(self.mesh)
-    love.graphics.setColor(1, 1, 1)
     love.graphics.setShader()
 end
 
 function model:drawID(shader)
-    --self.shader?
+
+
 end
 
 -- the fallback function if ffi was not loaded

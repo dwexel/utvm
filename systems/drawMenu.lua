@@ -20,14 +20,8 @@ function drawMenu:preProcess(dt)
 	
 	if i == "up" or i == "w" then
 		c = c - 1
-		if c < 1 then 
-			c = 2 
-		end
 	elseif i == "down" or i == "s" then
 		c = c + 1
-		if c > 2 then 
-			c = 1 
-		end
 	end
 
 	if i == "return" then

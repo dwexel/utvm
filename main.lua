@@ -1,13 +1,10 @@
 --[[
 	split code up into the smallest parts
 
-	g3d camera only uses the "look_at" code to move - i want to learn more
-
 	export properties:
 		axes:
 			x > forward
 			z > up
-
 
 	globals
 		player info
@@ -24,9 +21,8 @@
 		non depth testing
 		scramble verts in memory
 		wireframe mode
+		draw each mesh with only one color
 
-	todo
-		use a load level system
 
 	use spritebatch to make it all
 		glitter
@@ -35,21 +31,50 @@
 		could use a shader to make atlas animations
 
 
-	globals are good when used sparingly
 
-	i am going in the right direction with the input system.
-	it would be cool if I could systematize it more
+	thoughts
+		globals are good when used sparingly
 
-	it would be cool if tiny ecs had a way to implement a system that could get called when-needed,
-	rather than every frame
-		I guess that's just the observer pattern
+		i am going in the right direction with the input system.
+		it would be cool if I could systemetize it more
 
-	split pixel code and vertex code
+		it would be cool if tiny ecs had a way to implement a system that could get called when-needed,
+		rather than every frame. I guess that's just the observer pattern
 
-	use system indexes to set order
+
+	todo:
+		split pixel code and vertex code
+
+
+	related:
+		use system indexes to set order
+		maybe using flags is convoluted
+
+
+
+	use loadstring to load levels?
+		evaluates in a global context! that's ok...
+
+	coroutines exist
+		use them for the picking function
+	
+
+	leverage love graphics state more
+		can use custom shaders to draw to multiple canvases at once?
+
+
+	it would be cool to make the picking as modular as possible
+
+
+
+
+	new systems might help!
+	help 
+	help!
 
 
 ]]
+
 
 
 local world
@@ -148,7 +173,9 @@ local function dotProduct(a1,a2, b1,b2)
     return a1*b1 + a2*b2
 end
 
-local function newSB(tex, pos)
+function newSB(tex, pos)
+	assert(type(tex) == "string", "wrong type")
+	tex = lg.newImage(tex)
 	local sb = lg.newSpriteBatch(tex, 100, "static")
 	local matrix_scale = 0.001
 	local pic_scale = 1
@@ -170,8 +197,7 @@ local function newSB(tex, pos)
 end
 
 local testShaders = require("test_shaders")
-local testShaderModel = testShaders.model
-local testShaderBB = testShaders.billboard
+
 
 ---------------------------------------
 -- globals
@@ -195,33 +221,39 @@ player = {
 }
 
 graphicsState = {
-	shader = g3d.shader,
-	billboardShader = billboard.shader,
-	camera = g3d.camera,
+	-- active state, always have value
+	shader = nil,
+	bbShader = nil,
+	camera = nil,
 
-	canvas = nil,
-	flag = false
+
+	-- library
+	defaultShader = g3d.shader,
+	defaultbbShader = billboard.shader,
+	solidColor = testShaders.model,
+	solidColorbb = testShaders.billboard,
+	canvas = lg.newCanvas(),
+
+	-- flag
+	updateCanvasFlag = false,
+	-- drawColorsFlag = false
 }
-
-
-function graphicsState:toggle()
-	self.flag = true
-end
 
 
 
 
 do
 	local gs = graphicsState
+	gs.camera = g3d.camera
 	gs.camera.r = 0
-	gs.shader:send("projectionMatrix", gs.camera.projectionMatrix)
-	gs.billboardShader:send("projectionMatrix", gs.camera.projectionMatrix)
 
-	-- not in the initial state
-	testShaderModel:send("projectionMatrix", gs.camera.projectionMatrix)
-	testShaderBB:send("projectionMatrix", gs.camera.projectionMatrix)
+	gs.defaultShader:send("projectionMatrix", gs.camera.projectionMatrix)
+	gs.defaultbbShader:send("projectionMatrix", gs.camera.projectionMatrix)
+	gs.solidColor:send("projectionMatrix", gs.camera.projectionMatrix)
+	gs.solidColorbb:send("projectionMatrix", gs.camera.projectionMatrix)
 
-	gs.canvas = lg.newCanvas()
+	gs.shader = gs.defaultShader
+	gs.bbShader = gs.defaultbbShader
 end
 
 
@@ -244,54 +276,53 @@ function spin:process(e, dt)
 end
 
 
+local updateTweens = tiny.processingSystem()
+updateTweens.updateSystem = true
+updateTweens.processPlaying = true
+updateTweens.filter = tiny.requireAll("tween")
+-- requiring a tween component
 
-
-
-local getEntities = tiny.processingSystem({
-	meshesToPick = {}
-})
-getEntities.filter = tiny.requireAll("mesh")
-getEntities.active = false
-
-function getEntities:preProcess()
-	self.meshesToPick = {}
-end
-
-function getEntities:process(e)
-	assert(e) 
-	table.insert(self.meshesToPick, e)
-end
-
-function getEntities:postProcess()
-	print("here")
+function updateTweens:process(e, dt)
+	local tween = e.tween
+	if tween.t < tween.endTime then
+		tween.t = tween.t + dt
+	else 
+		tween.finished = true
+	end
 end
 
 
+local intp = tiny.processingSystem()
+intp.updateSystem = true
+intp.processPlaying = true
+intp.filter = tiny.requireAll("tween", "mesh")
+
+function intp:process(e, dt)
+	if not e.tween.finished then
+
+	end
+end
+
+
+
+
+local getClickable = require("systems.getClickable")
 local updatePlayerPos = require("systems.updatePlayerPos")
-local renderTarget = require("systems.renderTarget")
 local drawMenu = require("systems.drawMenu")
-local renderOnce = require("systems.renderOnce")
 
+local renderTarget = require("systems.renderTarget")
+local updateCamera = require("systems.updateCamera")
+local drawModels = require("systems.drawModels")
+local drawID = require("systems.drawID")
+
+local drawWrap = require("systems.drawWrap")
 
 -----------------------------------------
 -- driver
 -----------------------------------------
 
 
-function love.load()
-	local globe = g3d.newModel("assets/sphere.obj", "assets/earth.png", {0,-1,0}, nil, 0.5):compress()
-	globe.spinning = true
-
-	local car = g3d.newModel("assets/car.obj", "assets/1377 car.png", {2,-1,0}, {0,0.5,0}, 0.05):compress()
-	local level_background = g3d.newModel("assets/boo.obj", "assets/alexander ross.png"):compress()
-	
-	-- exported at 0.1 
-	fish = g3d.newModel("assets/Goldfish.obj", "assets/1377 car.png", {-0.5,-4,0.2}, nil, 0.5):compress()
-	fish.color = {1, 0.5, 0.6}
-
-	local burger = newSB(lg.newImage("assets/burger.png"), {0.5,0,2})
-
-
+function love.load()	
 	local ui = {
 		menu = {
 			{
@@ -301,7 +332,11 @@ function love.load()
 			{
 				label = "quit",
 				fn = love.event.quit
-			}
+			},
+			{
+				label = "wireframe",
+				fn = function() lg.setWireframe(true) end
+			},
 		},
 
 		font = lg.newFont(20),
@@ -309,24 +344,53 @@ function love.load()
 		y = 500
 	}
 
+	local rat = g3d.newModel("assets/rat.obj", "assets/Tex_Rat.png")
+	rat.clickable = true
+
+	local globe = g3d.newModel("assets/sphere.obj", "assets/earth.png", {0,-1,0}, nil, 0.5):compress()
+	globe.spinning = true
+	globe.clickable = true
+
+	local car = g3d.newModel("assets/car.obj", "assets/1377 car.png", {2,-1,0}, {0,0.5,0}, 0.05):compress()
+	car.clickable = true
+
+	local walls = g3d.newModel("assets/level.obj", "assets/alexander ross.png"):compress()
+
+	-- still	
+	fish = g3d.newModel("assets/Goldfish.obj", "assets/1377 car.png", {-0.5,-4,0.2}, nil, 0.5):compress()
+	fish.color = {1, 0.5, 0.6}
+	fish.clickable = true
+
+	local burger = newSB("assets/burger.png", {0.5,0,2})
+	
 	world = tiny.world(
-		car,
+		ui,
+		rat,
 		globe,
-		level_background,
+		car,
+		walls,
 		fish,
 		burger,
-		ui,
 
 		spin,
 		updatePlayerPos,
-		renderTarget,
 		drawMenu,
-		getEntities,
-		-- renderOnce,
-
-		require("systems.updateCamera"),
-		require("systems.drawModels")
+		getClickable,
+		renderTarget,
+		updateCamera,
+		drawModels,
+		drawID,
+		drawWrap
 	)
+
+	-- local models = [[
+	-- 	-- code here 
+	-- 	return {rat, globe, car, walls, fish, burger}
+	-- ]]
+
+	-- models = loadstring(models)()
+	-- world:add(unpack(models))
+
 
 	level.positions = loadPositions("assets/positions.obj")
 	local bi = lg.newImage("assets/1377 car.png")
@@ -369,21 +433,49 @@ function love.keypressed(key, scancode, isrepeat)
 
 
 
-	if key == "l" then
-		graphicsState:toggle()
-	end
-
 	if key == "p" then
-		local p = graphicsState.camera.position
-		fish:lookAt(p, nil)
-		print("position = "..table.concat(p, ", "))
+		local cam = graphicsState.camera
+		fish:lookAt(cam.position, nil)
+		print("position = "..table.concat(cam.position, ", "))
+		print("rotation = "..cam.r)
 	end
 end
 
-function love.mousepressed(x, y, button, istouch, presses)
-	-- getEntities:update()
-	-- renderOnce:render()
+local function pickTest(x, y)
 
+	getClickable:update()
+	local len = #getClickable.entities
+	for i, e in pairs(getClickable.entities) do
+		e.ID = i / len
+	end
+
+	graphicsState.updateCanvasFlag = true
+	drawModels.active = false
+	drawID.active = true
+	graphicsState.shader = graphicsState.solidColor
+	graphicsState.bbShader = graphicsState.solidColorbb
+
+	coroutine.yield()
+
+	drawModels.active = true
+	drawID.active = false
+	graphicsState.shader = graphicsState.defaultShader
+	graphicsState.bbShader = graphicsState.defaultbbShader
+
+	-- print(x, y)
+
+	local data = graphicsState.canvas:newImageData()
+	local r, g, b, a = data:getPixel(x, y)
+	print(r, g, b, a)
+	
+
+end
+
+
+function love.mousepressed(x, y, button, istouch, presses)
+	local pt = coroutine.create(pickTest)
+	coroutine.resume(pt, x, y)
+	drawWrap.coroutine = pt
 end
 
 function love.resize(w, h)
