@@ -48,18 +48,12 @@
 
 	related:
 		use system indexes to set order
-		maybe using flags is convoluted
 
+	use loadstring to load levels? evaluates in a global context! that's ok...
 
+	coroutines exist	
 
-	use loadstring to load levels?
-		evaluates in a global context! that's ok...
-
-	coroutines exist
-		use them for the picking function
-	
-
-	leverage love graphics state more
+	leverage love graphics state more?
 		can use custom shaders to draw to multiple canvases at once?
 
 
@@ -72,6 +66,10 @@
 	help 
 	help!
 
+	have an overlay "blocking" color for picktesting
+		use sorting for draw order
+
+
 
 ]]
 
@@ -81,6 +79,8 @@ local world
 local lg = love.graphics
 g3d = require("lib/g3d")
 tiny = require("lib.tiny")
+cpml = require("lib.cpml")
+
 
 local function loadPositions(path)
 	local result = {}
@@ -94,7 +94,7 @@ local function loadPositions(path)
 		if words[1] == "v" then
 			table.insert(result, {tonumber(words[2]), tonumber(words[3]), tonumber(words[4])})
 		elseif words[1] == "l" then
-			print(line)
+			-- print(line)
 		end
 	end
 	return result
@@ -196,8 +196,48 @@ function newSB(tex, pos)
 	return self
 end
 
-local testShaders = require("test_shaders")
 
+local ui = {
+	menu = {
+		{
+			label = "resume",
+			fn = function() gamestates:switch() end
+		},
+		{
+			label = "quit",
+			fn = love.event.quit
+		},
+		{
+			label = "wireframe",
+			fn = function() lg.setWireframe(true) end
+		},
+	},
+
+	font = lg.newFont(20),
+	x = 500, 
+	y = 500
+}
+
+local function newTween(endTime, initial, final)
+	assert(endTime)
+	-- have different types?
+	return {
+		t = 0,
+		endTime = endTime,
+		finished = false,
+		initial = initial,
+		final = final
+	}
+end
+
+local _ts = require("test_shaders")
+
+local shaders = {
+	defaultShader = g3d.shader,
+	defaultbbShader = billboard.shader,
+	solidColorShader = _ts.model,
+	solidColorbbShader = _ts.billboard,
+}
 
 ---------------------------------------
 -- globals
@@ -225,35 +265,26 @@ graphicsState = {
 	shader = nil,
 	bbShader = nil,
 	camera = nil,
-
-
-	-- library
-	defaultShader = g3d.shader,
-	defaultbbShader = billboard.shader,
-	solidColor = testShaders.model,
-	solidColorbb = testShaders.billboard,
+	
+	-- does not always have to have a value
 	canvas = lg.newCanvas(),
 
-	-- flag
+	-- flags
 	updateCanvasFlag = false,
-	-- drawColorsFlag = false
 }
-
-
-
 
 do
 	local gs = graphicsState
 	gs.camera = g3d.camera
 	gs.camera.r = 0
 
-	gs.defaultShader:send("projectionMatrix", gs.camera.projectionMatrix)
-	gs.defaultbbShader:send("projectionMatrix", gs.camera.projectionMatrix)
-	gs.solidColor:send("projectionMatrix", gs.camera.projectionMatrix)
-	gs.solidColorbb:send("projectionMatrix", gs.camera.projectionMatrix)
+	shaders.defaultShader:send("projectionMatrix", gs.camera.projectionMatrix)
+	shaders.defaultbbShader:send("projectionMatrix", gs.camera.projectionMatrix)
+	shaders.solidColorShader:send("projectionMatrix", gs.camera.projectionMatrix)
+	shaders.solidColorbbShader:send("projectionMatrix", gs.camera.projectionMatrix)
 
-	gs.shader = gs.defaultShader
-	gs.bbShader = gs.defaultbbShader
+	gs.shader = shaders.defaultShader
+	gs.bbShader = shaders.defaultbbShader
 end
 
 
@@ -280,27 +311,35 @@ local updateTweens = tiny.processingSystem()
 updateTweens.updateSystem = true
 updateTweens.processPlaying = true
 updateTweens.filter = tiny.requireAll("tween")
--- requiring a tween component
 
 function updateTweens:process(e, dt)
-	local tween = e.tween
-	if tween.t < tween.endTime then
-		tween.t = tween.t + dt
+	local tw = e.tween
+
+	if not tw.finished and tw.t < tw.endTime then
+		tw.t = tw.t + dt
+
+		-- maybe could do this with components
 	else 
-		tween.finished = true
+		tw.finished = true
+
+
+		if type(tw.initial) == "cdata" then
+			-- e:setQuaternionRotation(tw.initial:lerp(tw.final, tw.t))
+			e:setQuaternionRotation(tw.final)
+		end
 	end
 end
 
 
-local intp = tiny.processingSystem()
-intp.updateSystem = true
-intp.processPlaying = true
-intp.filter = tiny.requireAll("tween", "mesh")
+local tweenRotation = tiny.processingSystem()
+tweenRotation.updateSystem = true
+tweenRotation.processPlaying = true
+tweenRotation.filter = tiny.requireAll("tween", "mesh", "quat")
 
-function intp:process(e, dt)
-	if not e.tween.finished then
-
-	end
+function tweenRotation:process(e, dt)
+	-- print(e)
+	-- if not e.tween.finished then
+	-- end
 end
 
 
@@ -309,79 +348,63 @@ end
 local getClickable = require("systems.getClickable")
 local updatePlayerPos = require("systems.updatePlayerPos")
 local drawMenu = require("systems.drawMenu")
-
 local renderTarget = require("systems.renderTarget")
 local updateCamera = require("systems.updateCamera")
 local drawModels = require("systems.drawModels")
 local drawID = require("systems.drawID")
-
 local drawWrap = require("systems.drawWrap")
 
 -----------------------------------------
 -- driver
 -----------------------------------------
 
+local fish
+local rat
 
-function love.load()	
-	local ui = {
-		menu = {
-			{
-				label = "resume",
-				fn = function() gamestates:switch() end
-			},
-			{
-				label = "quit",
-				fn = love.event.quit
-			},
-			{
-				label = "wireframe",
-				fn = function() lg.setWireframe(true) end
-			},
-		},
+function love.load()
+	graphicsState.camera.r = 4.6
 
-		font = lg.newFont(20),
-		x = 500, 
-		y = 500
-	}
-
-	local rat = g3d.newModel("assets/rat.obj", "assets/Tex_Rat.png")
+	rat = g3d.newModel("assets/rat.obj", "assets/Tex_Rat.png", {0,0,0,1})
 	rat.clickable = true
-
-	local globe = g3d.newModel("assets/sphere.obj", "assets/earth.png", {0,-1,0}, nil, 0.5):compress()
+	-- rat.tween = newTween(2)
+	local globe = g3d.newModel("assets/sphere.obj", "assets/earth.png", {-1.3, -2.3, 0}, nil, 0.5):compress()
 	globe.spinning = true
 	globe.clickable = true
-
 	local car = g3d.newModel("assets/car.obj", "assets/1377 car.png", {2,-1,0}, {0,0.5,0}, 0.05):compress()
 	car.clickable = true
-
 	local walls = g3d.newModel("assets/level.obj", "assets/alexander ross.png"):compress()
-
-	-- still	
-	fish = g3d.newModel("assets/Goldfish.obj", "assets/1377 car.png", {-0.5,-4,0.2}, nil, 0.5):compress()
-	fish.color = {1, 0.5, 0.6}
+	
+	fish = g3d.newModel("assets/Goldfish.obj", "assets/1377 car.png", {-0.1, -0.6, 0.2}, nil, 0.5):compress()
+	-- fish.color = {1, 0.5, 0.6}
 	fish.clickable = true
+	local initial = cpml.quat.new()
+	local final = cpml.quat.from_angle_axis(2, 0,0,1)
+	-- fish:setQuaternionRotation(final)
+
+	fish.tween = newTween(2, initial, final)
 
 	local burger = newSB("assets/burger.png", {0.5,0,2})
-	
+
 	world = tiny.world(
-		ui,
-		rat,
-		globe,
-		car,
-		walls,
-		fish,
-		burger,
+		ui, rat, globe, car, walls, fish, burger,
 
 		spin,
+		updateTweens,
 		updatePlayerPos,
-		drawMenu,
-		getClickable,
-		renderTarget,
 		updateCamera,
+		renderTarget,
 		drawModels,
 		drawID,
+		getClickable,
+		drawMenu,
 		drawWrap
 	)
+
+	level.positions = loadPositions("assets/positions.obj")
+	local bi = lg.newImage("assets/1377 car.png")
+	for _, v in ipairs(level.positions) do
+		world:addEntity(newBillboard(bi, v))
+	end
 
 	-- local models = [[
 	-- 	-- code here 
@@ -390,13 +413,7 @@ function love.load()
 
 	-- models = loadstring(models)()
 	-- world:add(unpack(models))
-
-
-	level.positions = loadPositions("assets/positions.obj")
-	local bi = lg.newImage("assets/1377 car.png")
-	for _, v in ipairs(level.positions) do
-		world:addEntity(newBillboard(bi, v))
-	end
+	
 end
 
 local playingFilter = tiny.requireAll("updateSystem", "processPlaying")
@@ -431,46 +448,36 @@ function love.keypressed(key, scancode, isrepeat)
 	updatePlayerPos.input = key
 	drawMenu.input = key
 
-
-
 	if key == "p" then
 		local cam = graphicsState.camera
-		fish:lookAt(cam.position, nil)
+		-- fish:lookAt(cam.position, nil)
 		print("position = "..table.concat(cam.position, ", "))
 		print("rotation = "..cam.r)
 	end
 end
 
 local function pickTest(x, y)
-
 	getClickable:update()
 	local len = #getClickable.entities
 	for i, e in pairs(getClickable.entities) do
 		e.ID = i / len
 	end
-
 	graphicsState.updateCanvasFlag = true
 	drawModels.active = false
 	drawID.active = true
-	graphicsState.shader = graphicsState.solidColor
-	graphicsState.bbShader = graphicsState.solidColorbb
-
+	graphicsState.shader = shaders.solidColorShader
+	graphicsState.bbShader = shaders.solidColorbbShader
 	coroutine.yield()
 
 	drawModels.active = true
 	drawID.active = false
-	graphicsState.shader = graphicsState.defaultShader
-	graphicsState.bbShader = graphicsState.defaultbbShader
-
-	-- print(x, y)
-
+	graphicsState.shader = shaders.defaultShader
+	graphicsState.bbShader = shaders.defaultbbShader
 	local data = graphicsState.canvas:newImageData()
 	local r, g, b, a = data:getPixel(x, y)
+	print(x, y)
 	print(r, g, b, a)
-	
-
 end
-
 
 function love.mousepressed(x, y, button, istouch, presses)
 	local pt = coroutine.create(pickTest)
@@ -483,5 +490,5 @@ function love.resize(w, h)
    gs.camera.aspectRatio = w/h
    gs.camera.updateProjectionMatrix()
 	gs.shader:send("projectionMatrix", gs.camera.projectionMatrix)
-	gs.billboardShader:send("projectionMatrix", gs.camera.projectionMatrix)
+	gs.bbShader:send("projectionMatrix", gs.camera.projectionMatrix)
 end

@@ -13,6 +13,7 @@ drawWrap.active = true
 function drawWrap:postWrap()
 	if self.coroutine then
 		coroutine.resume(self.coroutine)
+		self.coroutine = nil
 	end
 end
 

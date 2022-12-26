@@ -30,6 +30,7 @@ model.vertexFormat = {
 }
 model.shader = g3d.shader
 
+
 -- this returns a new instance of the model class
 -- a model must be given a .obj file or equivalent lua table, and a texture
 -- translation, rotation, and scale are all 3d vectors and are all optional
@@ -131,11 +132,17 @@ function model:setAxisAngleRotation(x,y,z,angle)
     self.rotation[3] = z * math.sin(angle)
     self.rotation[4] = math.cos(angle)
 
+    -- print(table.concat(self.rotation, ", "))
+
     self:updateMatrix()
 end
 
 -- rotate given one quaternion
 function model:setQuaternionRotation(x,y,z,w)
+    assert(x)
+    --cpml struct
+    if type(x) == "cdata" then x, y, z, w = x:unpack() end
+
     self.rotation[1] = x
     self.rotation[2] = y
     self.rotation[3] = z
@@ -178,10 +185,8 @@ function model:draw(shader)
     love.graphics.setShader()
 end
 
-function model:drawID(shader)
-
-
-end
+-- function model:drawID(shader)
+-- end
 
 -- the fallback function if ffi was not loaded
 function model:compress()
