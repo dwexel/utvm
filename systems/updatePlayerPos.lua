@@ -1,5 +1,5 @@
-assert(player)
-assert(level)
+assert(playerPos)
+assert(levelPos)
 
 local updatePlayerPos = tiny.system({
 	input = ""

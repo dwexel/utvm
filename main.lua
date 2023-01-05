@@ -49,30 +49,26 @@
 	related:
 		use system indexes to set order
 
+
 	use loadstring to load levels? evaluates in a global context! that's ok...
 
-	coroutines exist	
 
 	leverage love graphics state more?
-		can use custom shaders to draw to multiple canvases at once?
+	can use custom shaders to draw to multiple canvases at once
+	have a "blocking" color for picktesting
+	use sorting for draw order
 
 
-	it would be cool to make the picking as modular as possible
+	if might be alright tohave a library of types, but at the same time, i should avoid doing oop stuff
+		because "tag" components aren't great
 
 
-
-
-	new systems might help!
-	help 
-	help!
-
-	have an overlay "blocking" color for picktesting
-		use sorting for draw order
-
-
-
+	when using cpml with g3d, must be aware of whether ffi is being used by cpml
 ]]
 
+	-- level global var...
+	-- using plain tables for position
+	-- troubles may arise
 
 
 local world
@@ -81,22 +77,47 @@ g3d = require("lib/g3d")
 tiny = require("lib.tiny")
 cpml = require("lib.cpml")
 
+local inspect = require("lib.inspect")
+
+-- must get index in table of the spawn point
+-- must sort the table somehow..?
+-- no, have some kind of node representation
+-- but, that can also be iterated easily
+
+--[[
+	node:
+		x, y, z
+		list of connections (indices)
+		is spawn point? t/f
+]]
 
 local function loadPositions(path)
 	local result = {}
-	-- how does this work exactly.
-	local connections = {}
+
 	for line in love.filesystem.lines(path) do
 		local words = {}
 		for word in line:gmatch "([^%s]+)" do
 			table.insert(words, word)
 		end
+
 		if words[1] == "v" then
-			table.insert(result, {tonumber(words[2]), tonumber(words[3]), tonumber(words[4])})
+			local x, y, z, sp = tonumber(words[2]), tonumber(words[3]), tonumber(words[4]), tonumber(words[5])
+			local point = {x, y, z}
+			point.con = {} -- conections
+
+			table.insert(result, point)
+			if sp == 1 then 
+				point.isSpawnPoint = true
+			end
+
 		elseif words[1] == "l" then
-			-- print(line)
+			p1, p2 = tonumber(words[2]), tonumber(words[3])
+
+			table.insert(result[p1].con, p2)
+			table.insert(result[p2].con, p1)
 		end
 	end
+
 	return result
 end
 
@@ -155,6 +176,7 @@ function newBillboard(tex, pos)
 	return self
 end
 
+
 local gamestates = {PLAY = 1, PAUSED = 2}
 local gamestate = 1
 
@@ -170,7 +192,7 @@ function gamestates:switch()
 end
 
 local function dotProduct(a1,a2, b1,b2)
-    return a1*b1 + a2*b2
+	return a1*b1 + a2*b2
 end
 
 function newSB(tex, pos)
@@ -239,26 +261,15 @@ local shaders = {
 	solidColorbbShader = _ts.billboard,
 }
 
+_ts = nil
+
 ---------------------------------------
 -- globals
 ---------------------------------------
 
-level = {
-	positions = nil
-}
 
-function level.wrap(i)
-	if i > #level.positions then
-		i = 1
-	elseif i < 1 then
-		i = #level.positions
-	end
-	return i
-end
-
-player = {
-	pos = 1
-}
+levelPos = {} -- table
+playerPos = -1 -- table index
 
 graphicsState = {
 	-- active state, always have value
@@ -314,15 +325,11 @@ updateTweens.filter = tiny.requireAll("tween")
 
 function updateTweens:process(e, dt)
 	local tw = e.tween
-
 	if not tw.finished and tw.t < tw.endTime then
 		tw.t = tw.t + dt
-
 		-- maybe could do this with components
 	else 
 		tw.finished = true
-
-
 		if type(tw.initial) == "cdata" then
 			-- e:setQuaternionRotation(tw.initial:lerp(tw.final, tw.t))
 			e:setQuaternionRotation(tw.final)
@@ -343,16 +350,55 @@ function tweenRotation:process(e, dt)
 end
 
 
+local updateArrows = tiny.system({
+	input = "",
+	arrow = nil,
+})
+updateArrows.updateSystem = true
+updateArrows.processPlaying = true
+
+local arrowHeight = 0.3
+
+function updateArrows:update(dt)
+	if self.input then
+		if self.input == "o" then
+			assert(playerPos)
+			assert(levelPos)
+
+			--first pos
+
+			local p = levelPos[playerPos]
+			local t = levelPos[p.con[1]]
+			local c = graphicsState.camera.position
+
+			t = cpml.vec3(t)
+			c = cpml.vec3(c)
+
+			local v = (t - c):normalize()
+			local f = c + (v * 0.1)
+
+			print(f)
+			self.arrow:lookAtFrom({f.x, f.y, arrowHeight}, t)
+
+			-- local t = graphicsState.camera.position
+			-- self.arrow:lookAt({t[1], t[2], 0})
+
+		end
+		self.input = nil
+	end
+end
 
 
-local getClickable = require("systems.getClickable")
+
+
+local getClickable    = require("systems.getClickable")
 local updatePlayerPos = require("systems.updatePlayerPos")
-local drawMenu = require("systems.drawMenu")
-local renderTarget = require("systems.renderTarget")
-local updateCamera = require("systems.updateCamera")
-local drawModels = require("systems.drawModels")
-local drawID = require("systems.drawID")
-local drawWrap = require("systems.drawWrap")
+local drawMenu        = require("systems.drawMenu")
+local renderTarget    = require("systems.renderTarget")
+local updateCamera    = require("systems.updateCamera")
+local drawModels      = require("systems.drawModels")
+local drawID          = require("systems.drawID")
+local drawWrap        = require("systems.drawWrap")
 
 -----------------------------------------
 -- driver
@@ -373,25 +419,28 @@ function love.load()
 	local car = g3d.newModel("assets/car.obj", "assets/1377 car.png", {2,-1,0}, {0,0.5,0}, 0.05):compress()
 	car.clickable = true
 	local walls = g3d.newModel("assets/level.obj", "assets/alexander ross.png"):compress()
-	
 	fish = g3d.newModel("assets/Goldfish.obj", "assets/1377 car.png", {-0.1, -0.6, 0.2}, nil, 0.5):compress()
 	-- fish.color = {1, 0.5, 0.6}
 	fish.clickable = true
 	local initial = cpml.quat.new()
 	local final = cpml.quat.from_angle_axis(2, 0,0,1)
 	-- fish:setQuaternionRotation(final)
-
 	fish.tween = newTween(2, initial, final)
-
 	local burger = newSB("assets/burger.png", {0.5,0,2})
 
+
+	local arrow = g3d.newModel(square_verts, "assets/arrow2.png", nil, nil, 0.4)
+	updateArrows.arrow = arrow
+
 	world = tiny.world(
-		ui, rat, globe, car, walls, fish, burger,
+		ui, rat, globe, car, walls, fish, burger,  arrow,
 
 		spin,
 		updateTweens,
 		updatePlayerPos,
 		updateCamera,
+		updateArrows,
+
 		renderTarget,
 		drawModels,
 		drawID,
@@ -400,11 +449,29 @@ function love.load()
 		drawWrap
 	)
 
-	level.positions = loadPositions("assets/positions.obj")
+	local nodes = loadPositions("assets/path.obj")
+
+	-- spawnPoint index
+	local si = -1
+
+	-- billboard image
 	local bi = lg.newImage("assets/1377 car.png")
-	for _, v in ipairs(level.positions) do
-		world:addEntity(newBillboard(bi, v))
+
+	for i, v in ipairs(nodes) do
+		if v.isSpawnPoint then
+			si = i
+		end			
 	end
+
+	local sp = nodes[si]
+	for _, i in ipairs(sp.con) do
+		world:addEntity(newBillboard(bi, nodes[i]))
+	end
+
+	graphicsState.camera.position = nodes[si]
+	levelPos = nodes
+	playerPos = si
+
 
 	-- local models = [[
 	-- 	-- code here 
@@ -447,6 +514,8 @@ function love.keypressed(key, scancode, isrepeat)
 
 	updatePlayerPos.input = key
 	drawMenu.input = key
+	updateArrows.input = key
+
 
 	if key == "p" then
 		local cam = graphicsState.camera
@@ -487,8 +556,12 @@ end
 
 function love.resize(w, h)
 	local gs = graphicsState
-   gs.camera.aspectRatio = w/h
-   gs.camera.updateProjectionMatrix()
+	gs.camera.aspectRatio = w/h
+	gs.camera.updateProjectionMatrix()
 	gs.shader:send("projectionMatrix", gs.camera.projectionMatrix)
 	gs.bbShader:send("projectionMatrix", gs.camera.projectionMatrix)
+end
+
+function love.quit()
+	print("quitting")
 end

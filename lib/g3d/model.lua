@@ -140,6 +140,7 @@ end
 -- rotate given one quaternion
 function model:setQuaternionRotation(x,y,z,w)
     assert(x)
+
     --cpml struct
     if type(x) == "cdata" then x, y, z, w = x:unpack() end
 
@@ -165,6 +166,11 @@ end
 
 function model:lookAtFrom(pos, target, up)
     local pos = pos or self.translation
+
+    -- cpml struct
+    if type(pos) == "cdata" then pos = {pos.x, pos.y, pos.z} end
+    if type(target) == "cdata" then target = {target.x, target.y, target.z} end
+    
     self.matrix:lookAtFrom(pos, target, up or {0,0,1})
 end
 
