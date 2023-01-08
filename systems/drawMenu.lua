@@ -1,30 +1,32 @@
 local lg = love.graphics
 
-local drawMenu = tiny.processingSystem({input = ""})
 
--- private
+-- private, statically allocated
 local t = {}
 local s = ""
-local c = 1
+local menu_i = 1
 local execute = false
 
+local drawMenu = tiny.processingSystem({input = ""})
 drawMenu.drawSystem = true
 drawMenu.processPaused = true
 drawMenu.filter = tiny.requireAny("menu")
+
+
 
 function drawMenu:preProcess(dt)
 	lg.setColor(1, 1, 1)
 	lg.rectangle("fill", 100, 100, 100, 100)
 
-	local i = self.input
+	local key = self.input
 	
-	if i == "up" or i == "w" then
-		c = c - 1
-	elseif i == "down" or i == "s" then
-		c = c + 1
+	if key == "up" or key == "w" then
+		menu_i = menu_i - 1
+	elseif key == "down" or key == "s" then
+		menu_i = menu_i + 1
 	end
 
-	if i == "return" then
+	if key == "return" then
 		execute = true
 	end
 
@@ -33,18 +35,19 @@ end
 
 function drawMenu:process(e, dt)
 	if execute then
-		e.menu[c].fn()
+		e.menu[menu_i].fn()
 		execute = false
 	end
 
-
 	s = ""
 	t = {}
-	for i, v in ipairs(e.menu) do
-		s = s.."%s"..v.label.."\n"
+
+	for i, item in ipairs(e.menu) do
+		s = s.."%s"..item.label.."\n"
 		t[i] = ""
 	end
-	t[c] = ">"
+
+	t[menu_i] = ">"
 	s = s:format(unpack(t))
 	lg.setFont(e.font)
 	lg.print(s, e.x, e.y)
