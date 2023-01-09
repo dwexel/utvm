@@ -9,10 +9,6 @@ local drawWrap = tiny.system({
 drawWrap.drawSystem = true
 drawWrap.active = true
 
--- function drawWrap:preWrap()
--- 	lg.setColor(1, 1, 1)
--- end
-
 -- called after all things have been drawn
 function drawWrap:postWrap()
 	if self.coroutine then

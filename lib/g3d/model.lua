@@ -170,12 +170,11 @@ function model:lookAtFrom(pos, target, up)
     -- cpml struct
     if type(pos) == "cdata" then pos = {pos.x, pos.y, pos.z} end
     if type(target) == "cdata" then target = {target.x, target.y, target.z} end
-        
+    
     self.matrix:lookAtFrom(pos, target, up or {0,0,1})
 end
 
 function model:lookAt(target, up)
-    if type(target) == "cdata" then target = {target.x, target.y, target.z} end
     self.matrix:lookAtFrom(self.translation, target, up or {0,0,1})
 end
 

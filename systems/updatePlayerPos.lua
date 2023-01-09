@@ -1,6 +1,5 @@
 assert(playerPos)
 assert(levelPos)
-assert(graphicsState)
 
 local updatePlayerPos = tiny.system({
 	input = ""
@@ -9,7 +8,13 @@ updatePlayerPos.updateSystem = true
 updatePlayerPos.processPlaying = true
 
 function updatePlayerPos:update(dt)
-	self.input = ""
+	local d = 0
+
+	if self.input == "w" then 
+		d = 1 
+	elseif self.input == "s" then
+		d = -1
+	end
 
 	-- if self.inputQueue ~= 0 then
 	-- 	player.pos = level.wrap(player.pos + self.inputQueue)

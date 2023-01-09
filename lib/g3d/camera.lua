@@ -48,7 +48,6 @@ function camera.getLookVector()
 end
 
 -- give the camera a point to look from and a point to look towards
--- then updates the look matrix from those values
 function camera.lookAtFrom(x,y,z, xAt,yAt,zAt)
     camera.position[1] = x or camera.position[1]
     camera.position[2] = y or camera.position[2]

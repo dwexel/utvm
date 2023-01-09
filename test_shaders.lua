@@ -1,6 +1,6 @@
-local test_shaders = {}
+local shaders = {}
 
-test_shaders.model = love.graphics.newShader[[
+shaders.model = love.graphics.newShader[[
 	#ifdef VERTEX
 		uniform mat4 modelMatrix;
 		uniform mat4 viewMatrix;
@@ -23,7 +23,7 @@ test_shaders.model = love.graphics.newShader[[
 	#endif
 ]]
 
-test_shaders.billboard = love.graphics.newShader[[
+shaders.billboard = love.graphics.newShader[[
 	#ifdef VERTEX
 		uniform mat4 modelMatrix;
 		uniform mat4 viewMatrix;
@@ -53,5 +53,5 @@ test_shaders.billboard = love.graphics.newShader[[
 ]]
 
 
-return test_shaders
+return shaders
 
