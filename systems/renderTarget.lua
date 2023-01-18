@@ -19,7 +19,7 @@ function renderTarget:postWrap(dt)
 	if gs.canvas then
 		lg.setCanvas()
 		lg.setBlendMode("alpha", "premultiplied")
-		lg.draw(gs.canvas, 0,0,0, 0.5)
+		lg.draw(gs.canvas, 0,0,0, 0.2)
 		lg.setBlendMode("alpha")
 	end
 

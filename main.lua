@@ -26,8 +26,11 @@
 
 	use spritebatch to make it all
 		glitter
+			how would this work?
+			have to make a different batch for each item, then move them around? no...
+			would have to remove and add them each frame.
 
-	have some kind of, recursive function to create a table of positions based on what each vertex is connected to	
+	have some kind of, recursive function to create a table of positions based on what each vertex is connected to
 		could use a shader to make atlas animations
 
 
@@ -63,12 +66,24 @@
 		because "tag" components aren't great
 
 
-	when using cpml with g3d, must be aware of whether ffi is being used by cpml
-]]
+	be aware
+		when using cpml with g3d, must be aware of whether ffi is being used by cpml
+		of how positions are stored - plain table? c struct?
 
-	-- level global var...
-	-- using plain tables for position
-	-- troubles may arise
+
+	some kind of asset loading system would be cool
+
+	make types a folder?
+
+	-- local models = [[
+	-- 	-- code here 
+	-- 	return {rat, globe, car, walls, fish, burger}
+	-- 
+
+	-- models = loadstring(models)()
+	-- world:add(unpack(models))
+
+]]
 
 
 local world
@@ -77,105 +92,23 @@ g3d = require("lib/g3d")
 tiny = require("lib.tiny")
 cpml = require("lib.cpml")
 
+
+-- utility
+
 local inspect = require("lib.inspect")
+local loadPositions = require("lib.loadPositions")
 
--- must get index in table of the spawn point
--- must sort the table somehow..?
--- no, have some kind of node representation
--- but, that can also be iterated easily
 
---[[
-	node:
-		x, y, z
-		list of connections (indices)
-		is spawn point? t/f
-]]
-
-local function loadPositions(path)
-	local result = {}
-
-	for line in love.filesystem.lines(path) do
-		local words = {}
-		for word in line:gmatch "([^%s]+)" do
-			table.insert(words, word)
-		end
-
-		if words[1] == "v" then
-			local x, y, z, sp = tonumber(words[2]), tonumber(words[3]), tonumber(words[4]), tonumber(words[5])
-			local point = {x, y, z}
-			point.con = {} -- conections
-
-			table.insert(result, point)
-			if sp == 1 then 
-				point.isSpawnPoint = true
-			end
-
-		elseif words[1] == "l" then
-			p1, p2 = tonumber(words[2]), tonumber(words[3])
-
-			table.insert(result[p1].con, p2)
-			table.insert(result[p2].con, p1)
-		end
-	end
-
-	return result
-end
-
-local square_verts = {
-	{ 1,  1, 0, 1,0},
-	{-1, -1, 0, 0,1},
-	{ 1, -1, 0, 0,0},
-	{ 1,  1, 0, 1,0},
-	{-1,  1, 0, 1,1},
-	{-1, -1, 0, 0,1},
+local _bb = require("lib.bb_shader")
+local _ts = require("lib.test_shaders")
+local shaders = {
+	defaultShader = g3d.shader,
+	defaultbbShader = _bb,
+	solidColorShader = _ts.model,
+	solidColorbbShader = _ts.billboard,
 }
-
-for i = 1, #square_verts do
-	square_verts[i][1] = square_verts[i][1] * 0.1
-	square_verts[i][2] = square_verts[i][2] * 0.1
-end
-
-local billboard = {
-	vertexFormat = {
-		{"VertexPosition", "float", 3},
-		{"VertexTexCoord", "float", 2}
-	}
-}
-
-billboard.shader = love.graphics.newShader[[
-	#ifdef VERTEX
-		uniform mat4 modelMatrix;
-		uniform mat4 viewMatrix;
-		uniform mat4 projectionMatrix;
-		uniform bool isCanvasEnabled;
-		vec4 position(mat4 transform_projection, vec4 vertexPosition)
-		{
-			mat4 modelView = viewMatrix * modelMatrix;
-			modelView[0] = vec4(1, 0, 0, 0);
-			modelView[1] = vec4(0, 1, 0, 0);
-			modelView[2] = vec4(0, 0, 1, 0);
-			vec4 screenPosition = projectionMatrix * modelView * vertexPosition;
-			if (isCanvasEnabled) {
-				screenPosition.y *= -1.0;
-			}
-			return screenPosition;
-		}
-	#endif	
-]]
-
-function newBillboard(tex, pos)
-	assert(type(tex) == "userdata", "wrong type")
-
-	local self = setmetatable({}, g3d.modelMT)
-	self.isBillboard = true
-	self.mesh = love.graphics.newMesh(billboard.vertexFormat, square_verts, "triangles", "static")
-	self.mesh:setTexture(tex)
-	self.matrix = g3d.newMatrix()
-   self:setTransform(pos or {0,0,0}, {0,0,0}, {1,1,1})
-
-	return self
-end
-
+_ts = nil
+_bb = nil
 
 local gamestates = {PLAY = 1, PAUSED = 2}
 local gamestate = 1
@@ -190,34 +123,6 @@ function gamestates:switch()
 		return 
 	end
 end
-
-local function dotProduct(a1,a2, b1,b2)
-	return a1*b1 + a2*b2
-end
-
-function newSB(tex, pos)
-	assert(type(tex) == "string", "wrong type")
-	tex = lg.newImage(tex)
-	local sb = lg.newSpriteBatch(tex, 100, "static")
-	local matrix_scale = 0.001
-	local pic_scale = 1
-	local w, h = tex:getWidth(), tex:getHeight()
-
-	for i = 0, 10, 2 do
-		for j = 0, 10, 2 do
-			sb:add(i*w, j*h)
-		end
-	end
-
-	local defaultRotation = {math.pi/2, 0, math.pi/2}
-	local self = setmetatable({}, g3d.modelMT)
-	self.isSpriteBatch = true
-	self.matrix = g3d.newMatrix()
-	self.matrix:setTransformationMatrix(pos, defaultRotation, {-matrix_scale, -matrix_scale, matrix_scale})
-	self.mesh = sb
-	return self
-end
-
 
 local ui = {
 	menu = {
@@ -240,28 +145,17 @@ local ui = {
 	y = 500
 }
 
-local function newTween(endTime, initial, final)
-	assert(endTime)
-	-- have different types?
-	return {
-		t = 0,
-		endTime = endTime,
-		finished = false,
-		initial = initial,
-		final = final
-	}
+
+local printName = function(self)
+	local name = self.name or "no name, "..tostring(self)
+	print("self = "..name)
 end
 
-local _ts = require("test_shaders")
+local startTween = function(self)
+	self.tween.finished = false
+	self.tween.t = 0
+end
 
-local shaders = {
-	defaultShader = g3d.shader,
-	defaultbbShader = billboard.shader,
-	solidColorShader = _ts.model,
-	solidColorbbShader = _ts.billboard,
-}
-
-_ts = nil
 
 ---------------------------------------
 -- globals
@@ -302,6 +196,8 @@ end
 
 -----------------------------------------
 -- systems
+-- and types
+
 -----------------------------------------
 
 
@@ -318,123 +214,73 @@ function spin:process(e, dt)
 end
 
 
-local updateTweens = tiny.processingSystem()
-updateTweens.updateSystem = true
-updateTweens.processPlaying = true
-updateTweens.filter = tiny.requireAll("tween")
-
-function updateTweens:process(e, dt)
-	local tw = e.tween
-	if not tw.finished and tw.t < tw.endTime then
-		tw.t = tw.t + dt
-		-- maybe could do this with components
-	else 
-		tw.finished = true
-		if type(tw.initial) == "cdata" then
-			-- e:setQuaternionRotation(tw.initial:lerp(tw.final, tw.t))
-			e:setQuaternionRotation(tw.final)
-		end
-	end
-end
-
-
-local tweenRotation = tiny.processingSystem()
-tweenRotation.updateSystem = true
-tweenRotation.processPlaying = true
-tweenRotation.filter = tiny.requireAll("tween", "mesh", "quat")
-
-function tweenRotation:process(e, dt)
-	-- print(e)
-	-- if not e.tween.finished then
-	-- end
-end
-
-
-local updateArrows = tiny.system({
-	input = "",
-	arrow = nil,
-})
-updateArrows.updateSystem = true
-updateArrows.processPlaying = true
-
-local arrowHeight = 0.3
-
-function updateArrows:update(dt)
-	if self.input then
-		if self.input == "o" then
-			assert(playerPos)
-			assert(levelPos)
-
-			--first pos
-
-			local p = levelPos[playerPos]
-			local t = levelPos[p.con[1]]
-			local c = graphicsState.camera.position
-
-			t = cpml.vec3(t)
-			c = cpml.vec3(c)
-
-			local v = (t - c):normalize()
-			local f = c + (v * 0.1)
-
-			print(f)
-			self.arrow:lookAtFrom({f.x, f.y, arrowHeight}, t)
-
-			-- local t = graphicsState.camera.position
-			-- self.arrow:lookAt({t[1], t[2], 0})
-
-		end
-		self.input = nil
-	end
-end
-
-
-
-
+-- local updatePlayerPos = require("systems.updatePlayerPos")
+local updateTweens    = require("systems.updateTweens")
+local updateArrows    = require("systems.updateArrows")
 local getClickable    = require("systems.getClickable")
-local updatePlayerPos = require("systems.updatePlayerPos")
+
+local draw2D          = require("systems.draw2D")
 local drawMenu        = require("systems.drawMenu")
 local renderTarget    = require("systems.renderTarget")
+
 local updateCamera    = require("systems.updateCamera")
 local drawModels      = require("systems.drawModels")
 local drawID          = require("systems.drawID")
 local drawWrap        = require("systems.drawWrap")
 
+
+local types = require("lib.types")
+local newBillboard = types.newBillboard
+local newTween     = types.newTween
+local newArrow     = types.newArrow
+
+
 -----------------------------------------
 -- driver
 -----------------------------------------
 
-local fish
-local rat
 
 function love.load()
 	graphicsState.camera.r = 4.6
 
-	rat = g3d.newModel("assets/rat.obj", "assets/Tex_Rat.png", {0,0,0,1})
-	rat.clickable = true
-	-- rat.tween = newTween(2)
+	local rat = g3d.newModel("assets/rat.obj", "assets/Tex_Rat.png", {0,0,0,1})
+		rat.onClick = printName
+		rat.name = "rat"
+
 	local globe = g3d.newModel("assets/sphere.obj", "assets/earth.png", {-1.3, -2.3, 0}, nil, 0.5):compress()
-	globe.spinning = true
-	globe.clickable = true
+		globe.spinning = true
+		globe.onClick = printName
+
 	local car = g3d.newModel("assets/car.obj", "assets/1377 car.png", {2,-1,0}, {0,0.5,0}, 0.05):compress()
-	car.clickable = true
+		car.onClick = printName
+		car.name = "car"
+
 	local walls = g3d.newModel("assets/level.obj", "assets/alexander ross.png"):compress()
-	fish = g3d.newModel("assets/Goldfish.obj", "assets/1377 car.png", {-0.1, -0.6, 0.2}, nil, 0.5):compress()
-	-- fish.color = {1, 0.5, 0.6}
-	fish.clickable = true
-	local initial = cpml.quat.new()
-	local final = cpml.quat.from_angle_axis(2, 0,0,1)
-	-- fish:setQuaternionRotation(final)
-	fish.tween = newTween(2, initial, final)
-	local burger = newSB("assets/burger.png", {0.5,0,2})
+	
+	local fish = g3d.newModel("assets/Goldfish.obj", "assets/1377 car.png", {-0.1, -0.6, 0.2}, nil, 0.5):compress()
+		-- fish.color = {1, 0.5, 0.6}
+		fish.onClick = startTween
+		fish.name = "fish"
+		local i = cpml.quat.new()
+		local f = cpml.quat.from_angle_axis(2, 0,0,1)
+			fish:setQuaternionRotation(i)
+			fish.tween = newTween(2, i, f)
+			print(i)
+			print(f)
+			print("--------------------")
 
+	local burger = types.newSB("assets/burger.png", {0.5,0,2})
 
-	local arrow = g3d.newModel(square_verts, "assets/arrow2.png", nil, nil, 0.4)
-	updateArrows.arrow = arrow
+	updateArrows.arrows[1] = newArrow()
+	updateArrows.arrows[2] = newArrow()
+
 
 	world = tiny.world(
-		ui, rat, globe, car, walls, fish, burger,  arrow,
+		ui, rat, globe, car, walls, fish, burger, 
+		updateArrows.arrows[1],
+		updateArrows.arrows[2],
 
+		draw2D,
 		spin,
 		updateTweens,
 		updatePlayerPos,
@@ -453,34 +299,24 @@ function love.load()
 
 	-- spawnPoint index
 	local si = -1
-
-	-- billboard image
-	local bi = lg.newImage("assets/1377 car.png")
-
 	for i, v in ipairs(nodes) do
-		if v.isSpawnPoint then
-			si = i
-		end			
+		if v.isSpawnPoint then si = i end
 	end
 
-	local sp = nodes[si]
-	for _, i in ipairs(sp.con) do
-		world:addEntity(newBillboard(bi, nodes[i]))
-	end
+	-- local bi = lg.newImage("assets/1377 car.png")
+	-- for _, i in ipairs(nodes[si].cons) do
+	-- 	world:addEntity(newBillboard(bi, nodes[i]))
+	-- end
 
-	graphicsState.camera.position = nodes[si]
+	-- have to copy values.
+	graphicsState.camera.position[1] = nodes[si][1]
+	graphicsState.camera.position[2] = nodes[si][2]
+	graphicsState.camera.position[3] = nodes[si][3]
+
 	levelPos = nodes
 	playerPos = si
 
-
-	-- local models = [[
-	-- 	-- code here 
-	-- 	return {rat, globe, car, walls, fish, burger}
-	-- ]]
-
-	-- models = loadstring(models)()
-	-- world:add(unpack(models))
-	
+	graphicsState.updateArrowsFlag = true
 end
 
 local playingFilter = tiny.requireAll("updateSystem", "processPlaying")
@@ -512,9 +348,12 @@ function love.keypressed(key, scancode, isrepeat)
 		love.event.quit()
 	end
 
-	updatePlayerPos.input = key
+	-- send inputs 
 	drawMenu.input = key
-	updateArrows.input = key
+
+	if key =="o" then
+		graphicsState.updateArrowsFlag = true
+	end
 
 
 	if key == "p" then
@@ -536,16 +375,38 @@ local function pickTest(x, y)
 	drawID.active = true
 	graphicsState.shader = shaders.solidColorShader
 	graphicsState.bbShader = shaders.solidColorbbShader
-	coroutine.yield()
 
+	coroutine.yield()
+	
 	drawModels.active = true
 	drawID.active = false
 	graphicsState.shader = shaders.defaultShader
 	graphicsState.bbShader = shaders.defaultbbShader
 	local data = graphicsState.canvas:newImageData()
 	local r, g, b, a = data:getPixel(x, y)
-	print(x, y)
-	print(r, g, b, a)
+
+	if r == 0 then
+		return
+	end
+
+	local min = math.huge
+	local en_i = -1
+
+	for i, e in ipairs(getClickable.entities) do
+		local d = math.abs(e.ID - r)
+		if d < min then
+			min = d
+			en_i = i
+		end
+		-- clear ID
+		e.ID = nil
+	end
+
+	local entity = getClickable.entities[en_i]
+
+	-- do callback
+	assert(type(entity.onClick) == "function")
+	entity:onClick()
 end
 
 function love.mousepressed(x, y, button, istouch, presses)
