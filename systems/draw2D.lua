@@ -15,22 +15,22 @@ draw2D.filter = tiny.requireAny("menu")
 
 function draw2D:update(dt)
 
-	-- lg.setBlendMode("alpha", "alphamultiply")
-	-- lg.setBlendMode("multiply", "premultiplied")
 
 
-	lg.setColor(1, 1, 1, 0.5)
-	lg.rectangle("fill", 500, 400, 100, 200)
-	lg.setColor(1, 1, 1, 1)
-
-
-
-	-- local w, h = lg.getDimensions()
-	-- lg.setColor(0.5, 0.5, 0.3, 0.5)
-	-- lg.rectangle("fill", 0,0, w,h)
+	-- lg.setColor(1, 0.5, 0.2, 0.5)
+	-- lg.rectangle("fill", 500, 400, 100, 200)
 	-- lg.setColor(1, 1, 1, 1)
 
 
+	lg.setBlendMode("multiply", "premultiplied")
+
+	local w, h = lg.getDimensions()
+	lg.setColor(0.5, 0.5, 0.3, 0.5)
+	lg.rectangle("fill", 0,0, w,h)
+	lg.setColor(1, 1, 1, 1)
+
+
+	lg.setBlendMode("alpha", "alphamultiply")
 
 
 end

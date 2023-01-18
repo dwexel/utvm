@@ -61,9 +61,8 @@ local function newModel(verts, texture, translation, rotation, scale)
     self.matrix = newMatrix()
     if type(scale) == "number" then scale = {scale, scale, scale} end
     self:setTransform(translation or {0,0,0}, rotation or {0,0,0}, scale or {1,1,1})
-
+    
     self.color = nil
-
 
     return self
 end
@@ -106,6 +105,11 @@ end
 
 -- move given one 3d vector
 function model:setTranslation(tx,ty,tz)
+    -- cpml vector
+    if not ty and not tz then
+        tx, ty, tz = tx:unpack()
+    end
+
     self.translation[1] = tx
     self.translation[2] = ty
     self.translation[3] = tz
@@ -139,9 +143,7 @@ end
 
 -- rotate given one quaternion
 function model:setQuaternionRotation(x,y,z,w)
-    assert(x)
-
-    --cpml struct
+    --cpml quat
     if type(x) == "cdata" then x, y, z, w = x:unpack() end
 
     self.rotation[1] = x

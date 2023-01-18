@@ -1,27 +1,28 @@
-
 assert(cpml)
 
+local updateEntityFromTween = tiny.processingSystem()
+updateEntityFromTween.updateSystem = true
+updateEntityFromTween.processPlaying = true
+updateEntityFromTween.filter = tiny.requireAll("tween")
 
-local updateTweens = tiny.processingSystem()
-updateTweens.updateSystem = true
-updateTweens.processPlaying = true
-updateTweens.filter = tiny.requireAll("tween")
+-- function updateEntityFromTween:onModify(dt)
+-- 	print('modified')
+-- end
 
-function updateTweens:process(e, dt)
+function updateEntityFromTween:process(e, dt)
 	local tw = e.tween
 	if not tw.finished and tw.t < tw.endTime then
 		tw.t = tw.t + dt
-		
-		-- catch cpml quat
-		if type(tw.initial) == "cdata" then
+		if tw.type == "q" then
 			local q = cpml.quat.slerp(tw.initial, tw.final, tw.t/tw.endTime)
-			-- local q = tw.initial:slerp(tw.final, tw.t)
-			-- print(tw.initial, tw.final, tw.t)
 			e:setQuaternionRotation(q)
+		elseif tw.type == "v" then
+			local v = cpml.vec3.lerp(tw.initial, tw.final, tw.t/tw.endTime)
+			e:setTranslation(v)
 		end
 	else
 		tw.finished = true
 	end
 end
 
-return updateTweens
+return updateEntityFromTween

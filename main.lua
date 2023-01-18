@@ -64,6 +64,7 @@
 
 	if might be alright tohave a library of types, but at the same time, i should avoid doing oop stuff
 		because "tag" components aren't great
+		think of them as helpers rather than the end-all of entities
 
 
 	be aware
@@ -71,9 +72,10 @@
 		of how positions are stored - plain table? c struct?
 
 
-	some kind of asset loading system would be cool
-
-	make types a folder?
+	ideas
+		some kind of asset loading system would be cool
+		make types a folder?
+		move callbakc components to types file?
 
 	-- local models = [[
 	-- 	-- code here 
@@ -83,6 +85,9 @@
 	-- models = loadstring(models)()
 	-- world:add(unpack(models))
 
+	timer system, that calls a function when timer is done
+
+	all callbacks are called with self and world as arguments
 ]]
 
 
@@ -145,16 +150,17 @@ local ui = {
 	y = 500
 }
 
-
-local printName = function(self)
-	local name = self.name or "no name, "..tostring(self)
-	print("self = "..name)
+local function sortSystems(before, after)
+	if after.index < before.index then
+		world:setSystemIndex(after, before.index+1)
+		-- world:setSystemIndex(before, after.index)
+	end
 end
 
-local startTween = function(self)
-	self.tween.finished = false
-	self.tween.t = 0
-end
+
+
+
+
 
 
 ---------------------------------------
@@ -193,11 +199,9 @@ do
 end
 
 
-
 -----------------------------------------
 -- systems
 -- and types
-
 -----------------------------------------
 
 
@@ -229,10 +233,17 @@ local drawID          = require("systems.drawID")
 local drawWrap        = require("systems.drawWrap")
 
 
-local types = require("lib.types")
-local newBillboard = types.newBillboard
-local newTween     = types.newTween
-local newArrow     = types.newArrow
+local types, callbacks = unpack(require("lib.types"))
+local newBillboard     = types.newBillboard
+local newTween         = types.newTween
+local newArrow         = types.newArrow
+
+
+local startTween   = callbacks.startTween
+local moveToPlayer = callbacks.moveToPlayer
+local printName    = callbacks.printName
+
+
 
 
 -----------------------------------------
@@ -249,7 +260,10 @@ function love.load()
 
 	local globe = g3d.newModel("assets/sphere.obj", "assets/earth.png", {-1.3, -2.3, 0}, nil, 0.5):compress()
 		globe.spinning = true
-		globe.onClick = printName
+		globe.onClick = moveToPlayer
+
+		-- globe.onClick = printName
+		-- globe.tween = newTween(3, cpml.vec3(0,0,0), cpml.vec3(1, 1, 0))
 
 	local car = g3d.newModel("assets/car.obj", "assets/1377 car.png", {2,-1,0}, {0,0.5,0}, 0.05):compress()
 		car.onClick = printName
@@ -259,18 +273,14 @@ function love.load()
 	
 	local fish = g3d.newModel("assets/Goldfish.obj", "assets/1377 car.png", {-0.1, -0.6, 0.2}, nil, 0.5):compress()
 		-- fish.color = {1, 0.5, 0.6}
-		fish.onClick = startTween
 		fish.name = "fish"
+		fish.onClick = startTween
 		local i = cpml.quat.new()
 		local f = cpml.quat.from_angle_axis(2, 0,0,1)
 			fish:setQuaternionRotation(i)
 			fish.tween = newTween(2, i, f)
-			print(i)
-			print(f)
-			print("--------------------")
 
 	local burger = types.newSB("assets/burger.png", {0.5,0,2})
-
 	updateArrows.arrows[1] = newArrow()
 	updateArrows.arrows[2] = newArrow()
 
@@ -294,6 +304,9 @@ function love.load()
 		drawMenu,
 		drawWrap
 	)
+
+	world:setSystemIndex(draw2D, #world.systems)
+	world:setSystemIndex(drawMenu, #world.systems)
 
 	local nodes = loadPositions("assets/path.obj")
 
@@ -406,7 +419,7 @@ local function pickTest(x, y)
 
 	-- do callback
 	assert(type(entity.onClick) == "function")
-	entity:onClick()
+	entity:onClick(world)
 end
 
 function love.mousepressed(x, y, button, istouch, presses)

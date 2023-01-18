@@ -1,4 +1,6 @@
 assert(g3d)
+assert(cpml)
+
 local lg = love.graphics
 
 local square_verts = {
@@ -20,6 +22,7 @@ local bbVertexFormat = {
 	{"VertexTexCoord", "float", 2}
 }
 
+-- local tweenTypes = {QUAT = 1}
 
 
 ---------------------------------
@@ -51,8 +54,6 @@ function types.newSB(tex, pos)
 	self.mesh = sb
 	return self
 end
-
-
 
 function types.newBillboard(tex, pos)
 	assert(type(tex) == "userdata", "wrong type")
@@ -86,23 +87,62 @@ function types.newArrow()
 	return self
 end
 
--- local tweenTypes = {QUAT = 1}
-
 function types.newTween(endTime, initialObject, finalObject)
-	assert(endTime)
+	local type
+	if cpml.vec3.is_vec3(initialObject) then
+		type = "v"
+	end
+
+	if cpml.quat.is_quat(initialObject) then
+		type = "q"
+	end
 
 	return {
 		t = 0,
 		endTime = endTime,
 		finished = true,
+
 		initial = initialObject,
-		final = finalObject
+		final = finalObject,
+
+		type = type,
 	}
+end
+
+--------------------------------------------------
+-- component generators
+--------------------------------------------------
+
+
+
+local callbacks = {}
+
+function callbacks.startTween(self, world)
+	self.tween.finished = false
+	self.tween.t = 0
+end
+
+function callbacks.moveToPlayer(self, world)
+	assert(world)
+	assert(graphicsState)
+
+	local pos    = cpml.vec3(self.translation)
+	local player = cpml.vec3(graphicsState.camera.position)
+	self.tween = types.newTween(3, pos, player)
+
+	world:addEntity(self)
+	world:refresh()
+
+	callbacks.startTween(self)
+end
+
+function callbacks.printName(self, world)
+	local name = self.name or "no name, "..tostring(self)
+	print("self = "..name)
 end
 
 
 
 
 
-
-return types
+return {types, callbacks}

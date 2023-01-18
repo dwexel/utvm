@@ -17,11 +17,11 @@ function updateCamera:update(dt)
 	-- self.position[3] = levelPos[playerPos][3]
 
 	-- move based on look direction
-	-- if kd("w") then iy = -dt elseif kd("s") then iy = dt end
-	-- local lx = math.cos(self.r) * -iy
-	-- local ly = math.sin(self.r) * -iy
-	-- self.position[1] = self.position[1] + lx	
-	-- self.position[2] = self.position[2] + ly
+	if kd("w") then iy = -dt elseif kd("s") then iy = dt end
+	local lx = math.cos(self.r) * -iy
+	local ly = math.sin(self.r) * -iy
+	self.position[1] = self.position[1] + lx	
+	self.position[2] = self.position[2] + ly
 end
 
 return updateCamera
